@@ -29,90 +29,106 @@ import           Database.SQLite.Simple.ToRow     (ToRow, toRow)
 import           GHC.Generics                     (Generic)
 import           GHC.Int                          (Int64)
 
-toJSONoptions = defaultOptions {
-              fieldLabelModifier = headToLower . drop 3 }
+toJSONoptions = defaultOptions {fieldLabelModifier = headToLower . drop 3}
   where
     headToLower x = toLower (head x) : tail x
 
 ------------------------------------------------------------------------
 -- | Common
-
 -- | QueryParams
 type Limit = Int
+
 type Offset = Int
+
 type Tagged = Text
+
 type Author = Username
+
 type FavoritedBy = Username
 
 type Username = Text
 
-newtype Tags = Tags { unTags :: [Text]}
-  deriving (Eq, Show, FromJSON, ToJSON)
+newtype Tags = Tags
+  { unTags :: [Text]
+  } deriving (Eq, Show, FromJSON, ToJSON)
 
 instance FromField Tags where
   fromField (Field (SQLText txt) _) = Ok $ Tags $ T.splitOn ";" txt
-  fromField f                       = returnError ConversionFailed f "need a text"
+  fromField f = returnError ConversionFailed f "need a text"
 
-newtype Password = Password { unPassword :: Text }
-  deriving (Eq, Show, FromJSON, FromField, ToField)
+newtype Password = Password
+  { unPassword :: Text
+  } deriving (Eq, Show, FromJSON, FromField, ToField)
 
-data User a = User a
+newtype User a =
+  User a
   deriving (Eq, Show, Generic)
 
 instance ToJSON a => ToJSON (User a) where
   toJSON (User a) = object ["user" .= a]
 
 instance FromJSON a => FromJSON (User a) where
-  parseJSON = withObject "user" $ \o -> do
-    a <- o .: "user"
-    return (User a)
+  parseJSON =
+    withObject "user" $ \o -> do
+      a <- o .: "user"
+      return (User a)
 
-data Profile a = Profile a
+newtype Profile a =
+  Profile a
   deriving (Eq, Show, Generic)
 
 instance ToJSON a => ToJSON (Profile a) where
   toJSON (Profile a) = object ["profile" .= a]
 
 instance FromJSON a => FromJSON (Profile a) where
-  parseJSON = withObject "profile" $ \o -> do
-    a <- o .: "profile"
-    return (Profile a)
+  parseJSON =
+    withObject "profile" $ \o -> do
+      a <- o .: "profile"
+      return (Profile a)
 
-data Art a = Art a
+newtype Art a =
+  Art a
   deriving (Eq, Show, Generic)
 
 instance ToJSON a => ToJSON (Art a) where
   toJSON (Art a) = object ["article" .= a]
 
 instance FromJSON a => FromJSON (Art a) where
-  parseJSON = withObject "article" $ \o -> do
-    a <- o .: "article"
-    return (Art a)
+  parseJSON =
+    withObject "article" $ \o -> do
+      a <- o .: "article"
+      return (Art a)
 
-data Arts a = Arts a Int
+data Arts a =
+  Arts a
+       Int
   deriving (Eq, Show, Generic)
 
 instance ToJSON a => ToJSON (Arts a) where
   toJSON (Arts a i) = object ["articles" .= a, "articlesCount" .= i]
 
-data TagList a = TagList a
+newtype TagList a =
+  TagList a
   deriving (Eq, Show)
 
 instance ToJSON a => ToJSON (TagList a) where
   toJSON (TagList a) = object ["tags" .= a]
 
-data Cmt a = Cmt a
+newtype Cmt a =
+  Cmt a
   deriving (Eq, Show, Generic)
 
 instance ToJSON a => ToJSON (Cmt a) where
   toJSON (Cmt a) = object ["comment" .= a]
 
 instance FromJSON a => FromJSON (Cmt a) where
-  parseJSON = withObject "comment" $ \o -> do
-    a <- o .: "comment"
-    return (Cmt a)
+  parseJSON =
+    withObject "comment" $ \o -> do
+      a <- o .: "comment"
+      return (Cmt a)
 
-data Cmts a = Cmts a
+newtype Cmts a =
+  Cmts a
   deriving (Eq, Show, Generic)
 
 instance ToJSON a => ToJSON (Cmts a) where
@@ -120,7 +136,6 @@ instance ToJSON a => ToJSON (Cmts a) where
 
 ------------------------------------------------------------------------
 -- | Response body
-
 -- | This is User from spec.
 data AuthUser = AuthUser
   { aurEmail    :: Text
@@ -163,27 +178,31 @@ instance ToJSON Article where
   toJSON = genericToJSON toJSONoptions
 
 instance FromRow Article where
-  fromRow = Article <$> field <*> field <*> field <*> field <*> field <*> field <*>
-    field <*> field <*> field <*> (UserProfile <$> field <*> field <*> field <*> field)
+  fromRow =
+    Article <$> field <*> field <*> field <*> field <*> field <*> field <*>
+    field <*>
+    field <*>
+    field <*>
+    (UserProfile <$> field <*> field <*> field <*> field)
 
 data Comment = Comment
-  { cmtId           :: Int64
-  , cmtBody           :: Text
-  , cmtCreatedAt      :: UTCTime
-  , cmtUpdatedAt      :: Maybe UTCTime
-  , cmtAuthor         :: UserProfile
+  { cmtId        :: Int64
+  , cmtBody      :: Text
+  , cmtCreatedAt :: UTCTime
+  , cmtUpdatedAt :: Maybe UTCTime
+  , cmtAuthor    :: UserProfile
   } deriving (Eq, Show, Generic)
 
 instance ToJSON Comment where
   toJSON = genericToJSON toJSONoptions
 
 instance FromRow Comment where
-  fromRow = Comment <$> field <*> field <*> field <*> field <*>
+  fromRow =
+    Comment <$> field <*> field <*> field <*> field <*>
     (UserProfile <$> field <*> field <*> field <*> field)
 
 ------------------------------------------------------------------------
 -- | Request body
-
 data Login = Login
   { logEmail    :: Text
   , logPassword :: Password
@@ -191,9 +210,9 @@ data Login = Login
 
 instance FromJSON Login where
   parseJSON = genericParseJSON toJSONoptions
-
   -- TODO can't be Maybe - we need something isomorfic to Maybe
   -- otherwise we cant set field to null
+
 data UpdateUser = UpdateUser
   { uusEmail    :: Maybe Text
   , uusUsername :: Maybe Username
@@ -203,8 +222,8 @@ data UpdateUser = UpdateUser
 
 instance FromJSON UpdateUser where
   parseJSON = genericParseJSON toJSONoptions
-
   -- | TODO add fields
+
 data NewUser = NewUser
   { nusEmail    :: Text
   , nusUsername :: Username
@@ -239,14 +258,15 @@ data UpdateArticle = UpdateArticle
 instance FromJSON UpdateArticle where
   parseJSON = genericParseJSON toJSONoptions
 
-data NewComment = NewComment { nmtBody :: Text }
-  deriving (Eq, Show, Generic)
+newtype NewComment = NewComment
+  { nmtBody :: Text
+  } deriving (Eq, Show, Generic)
 
 instance FromJSON NewComment where
   parseJSON = genericParseJSON toJSONoptions
+
 ------------------------------------------------------------------------
 -- | Database
-
 data Tag = Tag
   { tagId   :: Int64
   , tagText :: Text
@@ -270,8 +290,10 @@ instance ToJSON DBArticle where
   toJSON = genericToJSON toJSONoptions
 
 instance FromRow DBArticle where
-  fromRow = DBArticle <$> field <*> field <*> field <*> field
-    <*> field <*> field <*> field <*> field
+  fromRow =
+    DBArticle <$> field <*> field <*> field <*> field <*> field <*> field <*>
+    field <*>
+    field
 
 data DBUser = DBUser
   { usrId       :: Int64
@@ -288,24 +310,31 @@ instance FromRow DBUser where
 -- FIXME This way we can't set bio and image to null.
 updateUser :: DBUser -> UpdateUser -> DBUser
 updateUser DBUser {..} UpdateUser {..} =
-      DBUser usrId
-             (fromMaybe usrEmail uusEmail)
-             (fromMaybe usrUsername uusUsername)
-             usrPassword
-             (if isNothing uusBio then usrBio else uusBio)
-             (if isNothing uusImage then usrImage else uusImage)
+  DBUser
+    usrId
+    (fromMaybe usrEmail uusEmail)
+    (fromMaybe usrUsername uusUsername)
+    usrPassword
+    (if isNothing uusBio
+       then usrBio
+       else uusBio)
+    (if isNothing uusImage
+       then usrImage
+       else uusImage)
 
 userToProfile :: Bool -> DBUser -> UserProfile
-userToProfile follows DBUser {..} = UserProfile usrUsername usrBio usrImage follows
+userToProfile follows DBUser {..} =
+  UserProfile usrUsername usrBio usrImage follows
 
 updateArticle :: DBArticle -> UpdateArticle -> DBArticle
 updateArticle DBArticle {..} UpdateArticle {..} =
-      DBArticle drtId
+  DBArticle
+    drtId
                 -- TODO update slug if title changes
-                drtSlug
-                (fromMaybe drtTitle urtTitle)
-                (fromMaybe drtDescription urtDescription)
-                (fromMaybe drtBody urtBody)
-                drtCreatedAt
-                drtUpdatedAt
-                drtAuthor
+    drtSlug
+    (fromMaybe drtTitle urtTitle)
+    (fromMaybe drtDescription urtDescription)
+    (fromMaybe drtBody urtBody)
+    drtCreatedAt
+    drtUpdatedAt
+    drtAuthor

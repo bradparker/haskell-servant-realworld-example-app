@@ -3,9 +3,10 @@
 
 module DB where
 
+import           Control.Monad          (unless, when)
 import           Data.List              (intercalate)
 import           Data.Maybe             (catMaybes, fromMaybe, isJust,
-                                         listToMaybe)
+                                         listToMaybe, maybe)
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import           Database.SQLite.Simple
@@ -13,7 +14,8 @@ import           GHC.Int                (Int64)
 import           Types
 
 -- | Ignore query results.
-newtype Ignore = Ignore Text
+newtype Ignore =
+  Ignore Text
 
 instance FromRow Ignore where
   fromRow = Ignore <$> field
@@ -23,16 +25,15 @@ dbRegister :: Connection -> NewUser -> IO (Maybe DBUser)
 dbRegister conn newUser = do
   existingUsers <-
     dbGetUsersByNameOrEmail conn (nusUsername newUser) (nusEmail newUser)
-  case null existingUsers of
-    False -> return Nothing
-    True -> do
+  if null existingUsers
+    then return Nothing
+    else do
       addedUser <- dbAddUser conn newUser
       return $ Just addedUser
 
 dbGetUsersByNameOrEmail :: Connection -> Text -> Text -> IO [DBUser]
-dbGetUsersByNameOrEmail conn name email = do
-  results <- query conn stmt [name, email] :: IO [DBUser]
-  return results
+dbGetUsersByNameOrEmail conn name email =
+  query conn stmt [name, email] :: IO [DBUser]
   where
     stmt =
       "SELECT usr_id \
@@ -48,9 +49,9 @@ dbGetUsersByNameOrEmail conn name email = do
 dbGetUserByName :: Connection -> Text -> IO (Maybe DBUser)
 dbGetUserByName conn name = do
   results <- query conn stmt [name] :: IO [DBUser]
-  case null results of
-    True  -> return Nothing
-    False -> return $ Just $ head results
+  if null results
+    then return $ Just $ head results
+    else return Nothing
   where
     stmt =
       "SELECT usr_id \
@@ -93,7 +94,7 @@ dbAddUser conn newUser = do
           \ , usr_password \
           \ , usr_bio \
           \ , usr_image) \
-     \ VALUES \
+      \ VALUES \
           \ (?, ?, ?, ?, ?) "
 
 -- FIXME Remove this hack - XRecordWildCards shadowed record accesor.
@@ -101,25 +102,20 @@ userToId :: DBUser -> Int64
 userToId = usrId
 
 dbUpdateUser :: Connection -> DBUser -> IO (Maybe DBUser)
-dbUpdateUser conn DBUser {..} = do
+dbUpdateUser conn DBUser {..}
   -- Check if name or email are already taken.
-  existingUsers <-
-    dbGetUsersByNameOrEmail conn usrUsername usrEmail
-  let existingUsers' = filter (\x -> (userToId x) /= usrId) existingUsers
-  case null existingUsers' of
-    False -> return Nothing
-    True -> do
+ = do
+  existingUsers <- dbGetUsersByNameOrEmail conn usrUsername usrEmail
+  let existingUsers' = filter (\x -> userToId x /= usrId) existingUsers
+  if null existingUsers'
+    then do
       _ <- execute conn stmt args
       return $ Just DBUser {..}
+    else return Nothing
   where
     args =
-        toRow
-          ( usrEmail
-          , usrUsername
-          , unPassword usrPassword
-          , usrBio
-          , usrImage
-          , usrId)
+      toRow
+        (usrEmail, usrUsername, unPassword usrPassword, usrBio, usrImage, usrId)
     stmt =
       "UPDATE users \
         \ SET usr_email = ? \
@@ -130,7 +126,6 @@ dbUpdateUser conn DBUser {..} = do
       \ WHERE \
           \   usr_id = ?"
 
-
 newUserWithId :: NewUser -> Int64 -> DBUser
 newUserWithId NewUser {..} id_ =
   let usrId = id_
@@ -140,7 +135,6 @@ newUserWithId NewUser {..} id_ =
       usrBio = nusBio
       usrImage = nusImage
   in DBUser {..}
-
 
 dbIsUserFollowing :: Connection -> DBUser -> DBUser -> IO Bool
 dbIsUserFollowing conn user followed = do
@@ -167,37 +161,30 @@ dbIsArticleTagged conn art_id tag = do
          \ AND tgd_tag_id = ? "
 
 dbFollow :: Connection -> DBUser -> DBUser -> IO ()
-dbFollow conn user toFollow = do
+dbFollow conn user toFollow
   -- | Do nothing if we already follow that user.
+ = do
   isFollowed <- dbIsUserFollowing conn user toFollow
-  case isFollowed of
-    True  -> return ()
-    False -> execute conn stmt args
+  when isFollowed $ execute conn stmt args
   where
-    args = toRow
-          ( usrId user
-          , usrId toFollow)
+    args = toRow (usrId user, usrId toFollow)
     stmt =
-     "INSERT INTO follows \
-          \ ( fws_usr_id \
-          \ , fws_follows_usr_id) \
-     \ VALUES \
-          \ (?, ?) "
+      "INSERT INTO follows \
+        \ ( fws_usr_id \
+        \ , fws_follows_usr_id) \
+      \ VALUES \
+        \ (?, ?) "
 
 dbUnfollow :: Connection -> DBUser -> DBUser -> IO ()
-dbUnfollow conn user toUnfollow = do
+dbUnfollow conn user toUnfollow
   -- | Do nothing if we don't follow that user.
+ = do
   isFollowed <- dbIsUserFollowing conn user toUnfollow
-  case isFollowed of
-    False -> return ()
-    True  -> execute conn stmt args
+  when isFollowed $ execute conn stmt args
   where
-    args =
-        toRow
-          ( usrId user
-          , usrId toUnfollow)
+    args = toRow (usrId user, usrId toUnfollow)
     stmt =
-     "DELETE FROM follows \
+      "DELETE FROM follows \
      \ WHERE fws_usr_id = ? \
        \ AND fws_follows_usr_id = ?"
 
@@ -213,7 +200,6 @@ dbGetTagByText conn text = do
         \ FROM tags \
        \ WHERE tag_text = ?"
 
-
 dbAddTag :: Connection -> Text -> IO Tag
 dbAddTag conn text = do
   mbTag <- dbGetTagByText conn text
@@ -226,27 +212,23 @@ dbAddTag conn text = do
   where
     args = toRow $ Only text
     stmt =
-     "INSERT INTO tags \
-         \ (tag_text) \
-    \ VALUES \
-          \ (?) "
+      "INSERT INTO tags \
+        \ (tag_text) \
+      \ VALUES \
+        \ (?) "
 
 dbTagArticle :: Connection -> Int64 -> Tag -> IO ()
 dbTagArticle conn art_id tag = do
   isTagged <- dbIsArticleTagged conn art_id tag
-  case isTagged of
-    True  -> return ()
-    False -> execute conn stmt args
+  unless isTagged $ execute conn stmt args
   where
-    args = toRow
-          ( art_id
-          , tagId tag)
+    args = toRow (art_id, tagId tag)
     stmt =
       "INSERT INTO tagged \
-          \ ( tgd_art_id \
-          \ , tgd_tag_id) \
-     \ VALUES \
-          \ (?, ?) "
+        \ ( tgd_art_id \
+        \ , tgd_tag_id) \
+      \ VALUES \
+        \ (?, ?) "
 
 -- TODO Move it somewhere else.
 titleToSlug :: Text -> Text
@@ -257,28 +239,28 @@ dbAddArticle :: Connection -> DBUser -> NewArticle -> IO (Maybe Article)
 dbAddArticle conn user article = do
   execute conn stmt args
   art_id <- lastInsertRowId conn
-  let mbTags = fmap unTags $ nrtTagList article
+  let mbTags = unTags <$> nrtTagList article
   -- | Add tags to database and tag article.
-  dbTags <- traverse (traverse (dbAddTag conn)) $ mbTags
-  _ <- traverse (traverse (dbTagArticle conn art_id)) $ dbTags
-  addedArticle <- dbGetArticleById conn user art_id
-  return addedArticle
+  dbTags <- traverse (traverse (dbAddTag conn)) mbTags
+  _ <- traverse (traverse (dbTagArticle conn art_id)) dbTags
+  dbGetArticleById conn user art_id
   where
-    args = toRow
-           ( titleToSlug $ nrtTitle article
-           , nrtTitle article
-           , nrtDescription article
-           , nrtBody article
-           , usrId user)
+    args =
+      toRow
+        ( titleToSlug $ nrtTitle article
+        , nrtTitle article
+        , nrtDescription article
+        , nrtBody article
+        , usrId user)
     stmt =
       "INSERT INTO articles \
-          \ ( art_slug \
-          \ , art_title \
-          \ , art_description \
-          \ , art_body \
-          \ , art_usr_id) \
-     \ VALUES \
-          \ (?, ?, ?, ?, ?) "
+        \ ( art_slug \
+        \ , art_title \
+        \ , art_description \
+        \ , art_body \
+        \ , art_usr_id) \
+      \ VALUES \
+        \ (?, ?, ?, ?, ?) "
 
 -- TODO Add favorited and following.
 dbGetArticleById :: Connection -> DBUser -> Int64 -> IO (Maybe Article)
@@ -349,9 +331,9 @@ dbGetArticleBySlug conn slug = do
          \ ON art_usr_id=author.usr_id \
       \ WHERE art_slug = ? and art_slug = ? "
 
-
 -- TODO update slug with title
-dbGetUsersDBArticleBySlug :: Connection -> DBUser -> Text -> IO (Maybe DBArticle)
+dbGetUsersDBArticleBySlug ::
+     Connection -> DBUser -> Text -> IO (Maybe DBArticle)
 dbGetUsersDBArticleBySlug conn user slug = do
   results <- query conn stmt args :: IO [DBArticle]
   return $ listToMaybe results
@@ -388,21 +370,14 @@ dbGetDBArticleBySlug conn slug = do
        \ FROM articles \
       \ WHERE art_slug = ? "
 
-
 dbUpdateArticle :: Connection -> DBUser -> DBArticle -> IO (Maybe Article)
-dbUpdateArticle conn user DBArticle {..} = do
+dbUpdateArticle conn user DBArticle {..}
   -- TODO generate new slug.
+ = do
   _ <- execute conn stmt args
-  updated <- dbGetArticleById conn user drtId
-  return updated
+  dbGetArticleById conn user drtId
   where
-    args =
-        toRow
-          ( drtSlug
-          , drtTitle
-          , drtDescription
-          , drtBody
-          , drtId)
+    args = toRow (drtSlug, drtTitle, drtDescription, drtBody, drtId)
     stmt =
       "UPDATE articles \
         \ SET art_slug = ? \
@@ -412,9 +387,7 @@ dbUpdateArticle conn user DBArticle {..} = do
       \ WHERE art_id = ?"
 
 dbGetFeed :: Connection -> Limit -> Offset -> DBUser -> IO [Article]
-dbGetFeed conn limit offset user = do
-  results <- query conn stmt args :: IO [Article]
-  return results
+dbGetFeed conn limit offset user = query conn stmt args :: IO [Article]
   where
     args = toRow (usrId user, limit, offset)
     stmt =
@@ -449,28 +422,29 @@ dbGetFeed conn limit offset user = do
       \ LIMIT ? OFFSET ? "
 
 -- TODO atm we return most recent articles.
-dbGetArticles :: Connection
-              -> Limit
-              -> Offset
-              -> Maybe Author
-              -> Maybe Tagged
-              -> Maybe FavoritedBy
-              -> Maybe DBUser
-              -> IO [Article]
-dbGetArticles conn limit offset mbAuthor mbTagged mbFavoritedBy mbUser = do
-  results <- query conn stmt args :: IO [Article]
-  return results
+dbGetArticles ::
+     Connection
+  -> Limit
+  -> Offset
+  -> Maybe Author
+  -> Maybe Tagged
+  -> Maybe FavoritedBy
+  -> Maybe DBUser
+  -> IO [Article]
+dbGetArticles conn limit offset mbAuthor mbTagged mbFavoritedBy mbUser =
+  query conn stmt args :: IO [Article]
   where
-    userId = fromMaybe 0 $ fmap usrId mbUser
-
-    args = toRow $ whereArgs ++ [T.pack . show $ userId, T.pack . show $ limit, T.pack . show $ offset]
-    mbWhereArgs = [mbAuthor, mbTagged] -- , mbFavoritedBy, fmap usrUsername mbUser]
+    userId = maybe 0 usrId mbUser
+    args =
+      toRow $
+      whereArgs ++
+      [T.pack . show $ userId, T.pack . show $ limit, T.pack . show $ offset]
+    mbWhereArgs = [mbAuthor, mbTagged]
     whereNames = ["author.usr_username = ?", "tag_text = ?"]
     whereArgs = catMaybes mbWhereArgs
-    whereString = intercalate " AND "
-                . map snd
-                . filter (isJust . fst)
-                $ zip mbWhereArgs whereNames
+    whereString =
+      intercalate " AND " . map snd . filter (isJust . fst) $
+      zip mbWhereArgs whereNames
     -- TODO String -> Text
     stmt = Query $ T.pack stmt'
     stmt' =
@@ -503,8 +477,10 @@ dbGetArticles conn limit offset mbAuthor mbTagged mbFavoritedBy mbUser = do
        \ LEFT JOIN follows \
          \ ON author.usr_id=fws_follows_usr_id AND fws_usr_id = ? \
        \ LEFT JOIN tags \
-         \ ON tgd_tag_id=tag_id "
-         ++ (if null whereString then "" else " WHERE " ++ whereString) ++
+         \ ON tgd_tag_id=tag_id " ++
+      (if null whereString
+         then ""
+         else " WHERE " ++ whereString) ++
       " GROUP BY art_id \
       \ ORDER BY art_createdAt DESC \
       \ LIMIT ? OFFSET ? "
@@ -522,9 +498,7 @@ dbDeleteArticle conn article = do
     deleteArticles = "DELETE FROM articles where art_id = ? "
 
 dbGetTags :: Connection -> IO [Tag]
-dbGetTags conn = do
-  results <- query conn stmt () :: IO [Tag]
-  return results
+dbGetTags conn = query conn stmt () :: IO [Tag]
   where
     stmt = "select tag_id, tag_text from tags"
 
@@ -543,15 +517,11 @@ dbIsFavoritedByUser conn user article = do
 dbFavoriteArticle :: Connection -> DBUser -> DBArticle -> IO ()
 dbFavoriteArticle conn user article = do
   isFavorited <- dbIsFavoritedByUser conn user article
-  case isFavorited of
-    True  -> return ()
-    False -> execute conn stmt args
+  unless isFavorited $ execute conn stmt args
   where
-    args = toRow
-          ( usrId user
-          , drtId article)
+    args = toRow (usrId user, drtId article)
     stmt =
-     "INSERT INTO favorited \
+      "INSERT INTO favorited \
           \ ( fav_usr_id \
           \ , fav_art_id) \
      \ VALUES \
@@ -562,16 +532,13 @@ dbUnfavoriteArticle conn user article = do
   _ <- execute conn stmt args
   return ()
   where
-    args =
-        toRow
-          ( usrId user
-          , drtId article)
+    args = toRow (usrId user, drtId article)
     stmt =
-     "DELETE FROM favorited \
+      "DELETE FROM favorited \
      \ WHERE fav_usr_id = ? \
        \ AND fav_art_id = ?"
-
   -- TODO following
+
 dbGetCommentById :: Connection -> Int64 -> IO (Maybe Comment)
 dbGetCommentById conn cmt_id = do
   results <- query conn stmt args :: IO [Comment]
@@ -592,47 +559,37 @@ dbGetCommentById conn cmt_id = do
          \ ON cmt_usr_id=author.usr_id \
       \ WHERE cmt_id = ? "
 
-dbAddComment :: Connection -> NewComment -> DBUser -> DBArticle -> IO (Maybe Comment)
+dbAddComment ::
+     Connection -> NewComment -> DBUser -> DBArticle -> IO (Maybe Comment)
 dbAddComment conn newComment user article = do
   execute conn stmt args
   cmt_id <- lastInsertRowId conn
-  comment <- dbGetCommentById conn cmt_id
-  return comment
+  dbGetCommentById conn cmt_id
   where
-    args = toRow
-          ( nmtBody newComment
-          , drtId article
-          , usrId user)
+    args = toRow (nmtBody newComment, drtId article, usrId user)
     stmt =
-     "INSERT INTO comments \
+      "INSERT INTO comments \
           \ ( cmt_body \
           \ , cmt_art_id \
           \ , cmt_usr_id) \
      \ VALUES \
           \ (?, ?, ?) "
 
-
 dbDeleteComment :: Connection -> DBArticle -> DBUser -> Int -> IO ()
 dbDeleteComment conn article user art_id = do
   _ <- execute conn stmt args
   return ()
   where
-    args =
-        toRow
-          ( usrId user
-          , drtId article
-          , art_id)
+    args = toRow (usrId user, drtId article, art_id)
     stmt =
-     "DELETE FROM comments \
+      "DELETE FROM comments \
      \ WHERE cmt_usr_id = ? \
        \ AND cmt_art_id = ? \
        \ AND cmt_id = ?"
-
   -- TODO following
+
 dbGetComments :: Connection -> DBArticle -> Maybe DBUser -> IO [Comment]
-dbGetComments conn article mbUser = do
-  results <- query conn stmt args :: IO [Comment]
-  return results
+dbGetComments conn article mbUser = query conn stmt args :: IO [Comment]
   where
     args = Only $ drtId article
     stmt =
@@ -648,4 +605,3 @@ dbGetComments conn article mbUser = do
        \ JOIN users author \
          \ ON cmt_usr_id=author.usr_id \
       \ WHERE cmt_art_id = ? "
-

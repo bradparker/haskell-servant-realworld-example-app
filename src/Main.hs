@@ -21,7 +21,13 @@ import           Database.SQLite.Simple           (Connection, open)
 import           DB
 import           Network.Wai
 import           Network.Wai.Handler.Warp         (run)
-import           Servant
+import           Servant                          (Capture,
+                                                   Context ((:.), EmptyContext),
+                                                   Get, Handler, JSON, Post,
+                                                   ReqBody, Server, err401,
+                                                   err404, err409, err500,
+                                                   errBody, serveWithContext,
+                                                   throwError)
 import           Servant.API
 import           Servant.Server.Experimental.Auth
 import           Types

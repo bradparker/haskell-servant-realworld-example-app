@@ -1,0 +1,10 @@
+%syntax-version=1.0.0
+%project=conduit
+
+create-users 2018-03-27T10:27:56Z Brad Parker,,, <brad@brad> # Create users table.
+create-articles [create-users] 2018-03-27T10:28:07Z Brad Parker,,, <brad@brad> # Create articles table.
+create-comments [create-users create-articles] 2018-03-27T10:28:13Z Brad Parker,,, <brad@brad> # Create comments table.
+create-tags 2018-04-02T04:33:05Z Brad Parker,,, <brad@brad> # Create tags table.
+create-article-tags [create-tags create-articles] 2018-04-02T04:33:54Z Brad Parker,,, <brad@brad> # Create article tags table.
+create-follows [create-users] 2018-04-06T11:12:36Z Brad Parker,,, <brad@brad> # Create follows table.
+create-favorites [create-articles create-users] 2018-04-14T02:10:20Z Brad Parker,,, <brad@brad> # Create favorites table
